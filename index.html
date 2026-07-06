@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Retours — Geoffrey Gil</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+body{background:#F4F6F9;min-height:100vh}
+.wrap{max-width:480px;margin:0 auto}
+.hdr{background:#1A1A2E;color:#fff;padding:14px 18px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}
+.hdr-l h1{font-size:16px;font-weight:700}.hdr-l p{font-size:11px;opacity:.6;margin-top:1px}
+.adm-btn{font-size:11px;font-weight:700;padding:4px 10px;border-radius:10px;border:none;cursor:pointer}
+.pad{padding:14px}
+.tabs{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;margin-bottom:10px}
+.tab{padding:7px 12px;border:none;border-radius:16px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;flex-shrink:0}
+.card{background:#fff;border-radius:12px;margin-bottom:10px;box-shadow:0 1px 8px rgba(0,0,0,.06);border-left:4px solid;overflow:hidden}
+.cbody{padding:13px 14px}
+.ctitle{font-size:14px;font-weight:700;color:#1A1A2E;margin-bottom:4px}
+.cdesc{font-size:12px;color:#7F8C8D;margin-bottom:8px}
+.cfooter{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.badge{font-size:11px;font-weight:700;padding:3px 8px;border-radius:8px}
+.date{font-size:10px;color:#B0B8C1;margin-left:auto}
+.note{background:#FFF8E8;border-top:1px solid #FDE8A0;padding:10px 14px;font-size:12px;color:#856404}
+.note strong{display:block;font-size:10px;text-transform:uppercase;margin-bottom:2px;color:#B7860B}
+.fab{position:fixed;bottom:22px;right:22px;width:54px;height:54px;border-radius:50%;background:#E94560;color:#fff;font-size:26px;border:none;cursor:pointer;box-shadow:0 4px 16px rgba(233,69,96,.4);display:flex;align-items:center;justify-content:center;z-index:50}
+.ovl{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:200;display:flex;align-items:flex-end}
+.sheet{background:#fff;border-radius:20px 20px 0 0;padding:24px;width:100%;max-height:90vh;overflow-y:auto}
+.sheet h2{font-size:18px;font-weight:800;margin-bottom:16px}
+.fg{margin-bottom:12px}
+.fg label{display:block;font-size:11px;font-weight:700;color:#7F8C8D;text-transform:uppercase;margin-bottom:5px}
+.fg input,.fg textarea,.fg select{width:100%;padding:10px 12px;border:1.5px solid #E0E4E8;border-radius:8px;font-size:14px;font-family:inherit;outline:none}
+.fg input:focus,.fg textarea:focus{border-color:#1A1A2E}.fg textarea{resize:none}
+.cats{display:flex;gap:7px;flex-wrap:wrap}
+.cat{padding:6px 12px;border:2px solid;border-radius:14px;font-size:12px;font-weight:700;cursor:pointer}
+.btn-s{width:100%;padding:13px;background:#1A1A2E;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;margin-top:8px}
+.btn-s:disabled{opacity:.4}
+.pin-wrap{display:flex;gap:10px;justify-content:center;margin:20px 0}
+.pd{width:48px;height:56px;border:2px solid #E0E4E8;border-radius:10px;font-size:22px;font-weight:700;text-align:center;outline:none}
+.pd:focus{border-color:#1A1A2E}
+.srow{display:flex;align-items:center;justify-content:space-between;padding:9px 12px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;margin-bottom:6px}
+.empty{text-align:center;padding:40px 20px;color:#B0B8C1}
+.spin{text-align:center;padding:40px;color:#7F8C8D;font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="hdr">
+    <div class="hdr-l">
+      <h1 id="clientName">Retours</h1>
+      <p id="subtitle">Chargement...</p>
+    </div>
+    <button class="adm-btn" id="adminBtn" style="background:rgba(255,255,255,.15);color:#fff">Admin</button>
+  </div>
+  <div class="pad">
+    <div class="tabs" id="catTabs"></div>
+    <div class="tabs" id="statTabs"></div>
+    <div id="list"><div class="spin">Chargement...</div></div>
+  </div>
+</div>
+<button class="fab" id="fabBtn">+</button>
+
+<!-- Sheet ajout -->
+<div class="ovl" id="addSheet" style="display:none" onclick="if(event.target===this)closeAdd()">
+  <div class="sheet">
+    <h2>Nouveau retour</h2>
+    <div class="fg"><label>Catégorie</label><div class="cats" id="catBtns"></div></div>
+    <div class="fg"><label>Titre *</label><input id="fTitre" placeholder="En une phrase..."></div>
+    <div class="fg"><label>Description</label><textarea id="fDesc" rows="3" placeholder="Détails, étapes..."></textarea></div>
+    <div class="fg"><label>Votre nom</label><input id="fAuteur" placeholder="Geoffrey, Hugo..."></div>
+    <button class="btn-s" id="submitBtn" onclick="submitFeedback()">Envoyer</button>
+  </div>
+</div>
+
+<!-- Sheet PIN admin -->
+<div class="ovl" id="pinSheet" style="display:none" onclick="if(event.target===this)closePin()">
+  <div class="sheet" style="text-align:center">
+    <h2>Espace Axel</h2>
+    <p style="color:#7F8C8D;font-size:14px;margin-bottom:20px">Code d'accès</p>
+    <div class="pin-wrap" id="pinDots"></div>
+    <p id="pinErr" style="color:#E94560;font-size:13px;margin-bottom:12px;display:none">Code incorrect</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;max-width:220px;margin:0 auto" id="pinPad"></div>
+  </div>
+</div>
+
+<!-- Sheet gestion retour (admin) -->
+<div class="ovl" id="editSheet" style="display:none" onclick="if(event.target===this)closeEdit()">
+  <div class="sheet">
+    <h2>Traiter ce retour</h2>
+    <div id="editCard" style="background:#F4F6F9;border-radius:10px;padding:12px;margin-bottom:16px"></div>
+    <div class="fg"><label>Statut</label><div id="statutBtns"></div></div>
+    <div class="fg"><label>Note / réponse</label><textarea id="noteAxel" rows="3" placeholder="Bien reçu · En cours pour semaine prochaine..."></textarea></div>
+    <button class="btn-s" onclick="saveEdit()">Enregistrer</button>
+  </div>
+</div>
+
+<script>
+// ── CONFIG ──────────────────────────────────────────────────────────
+const SUPABASE_URL = 'https://kbvufeqouxmggafvmjai.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtidnVmZXFvdXhtZ2dhZnZtamFpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI4MTg3MjYsImV4cCI6MjA5ODM5NDcyNn0.SwpOrCFDm6ewbrdci2NXy13-aWbot8mTy8ws5HxfWGs';
+const CLIENT_NOM  = 'Geoffrey Gil Chocolaterie';
+const ADMIN_PIN   = '2813';
+
+const CATS = [
+  {id:'bug',   label:'🐛 Bug',          color:'#E94560',bg:'#FFF0F0'},
+  {id:'idee',  label:'💡 Idée',         color:'#F39C12',bg:'#FFF8F0'},
+  {id:'amelio',label:'🔧 Amélioration', color:'#3498DB',bg:'#EBF5FB'},
+];
+const STATS = [
+  {id:'recu', label:'📥 Reçu',              color:'#7F8C8D',bg:'#F4F6F9'},
+  {id:'info', label:'❓ Demande d\'info',    color:'#F39C12',bg:'#FFF8F0'},
+  {id:'cours',label:'⚙️ En cours',           color:'#3498DB',bg:'#EBF5FB'},
+  {id:'verif',label:'🔍 À vérifier',         color:'#8E44AD',bg:'#F5EEF8'},
+  {id:'done', label:'✅ Terminé',            color:'#27AE60',bg:'#F0FFF4'},
+];
+
+// ── Init ──────────────────────────────────────────────────────────────
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+let allItems = [], filtreCat = 'all', filtreStatut = 'all';
+let isAdmin = false, pinVal = '', editItem = null, selectedCat = 'bug', selectedStatut = '';
+
+document.getElementById('clientName').textContent = CLIENT_NOM;
+document.getElementById('adminBtn').addEventListener('click', () => {
+  if (isAdmin) { isAdmin = false; renderAdminBtn(); renderList(); }
+  else openPin();
+});
+
+// ── Chargement ────────────────────────────────────────────────────────
+async function load() {
+  const { data } = await sb.from('feedback').select('*').order('created_at', {ascending:false});
+  allItems = data || [];
+  renderAll();
+}
+
+function renderAll() {
+  document.getElementById('subtitle').textContent = `${allItems.length} retour${allItems.length>1?'s':''} · ${allItems.filter(i=>i.statut==='recu').length} nouveau(x)`;
+  renderTabs();
+  renderList();
+  renderAdminBtn();
+}
+
+function getCat(id)  { return CATS.find(c=>c.id===id)||CATS[0]; }
+function getStat(id) { return STATS.find(s=>s.id===id)||STATS[0]; }
+
+function renderAdminBtn() {
+  const b = document.getElementById('adminBtn');
+  b.style.background = isAdmin ? '#27AE60' : 'rgba(255,255,255,.15)';
+  b.style.color = '#fff';
+  b.textContent = isAdmin ? 'Mode Axel ✓' : 'Admin';
+}
+
+function renderTabs() {
+  const filtered = getFiltered();
+  // Catégories
+  let h = `<button class="tab" style="background:${filtreCat==='all'?'#1A1A2E':'#E0E4E8'};color:${filtreCat==='all'?'#fff':'#2C3E50'}" onclick="setFiltreCat('all')">Tout (${allItems.length})</button>`;
+  CATS.forEach(c => {
+    const n = allItems.filter(i=>i.categorie===c.id).length;
+    h += `<button class="tab" style="background:${filtreCat===c.id?c.color:'#E0E4E8'};color:${filtreCat===c.id?'#fff':'#2C3E50'}" onclick="setFiltreCat('${c.id}')">${c.label} (${n})</button>`;
+  });
+  document.getElementById('catTabs').innerHTML = h;
+
+  // Statuts
+  let h2 = `<button class="tab" style="background:${filtreStatut==='all'?'#1A1A2E':'#E0E4E8'};color:${filtreStatut==='all'?'#fff':'#2C3E50'}" onclick="setFiltreStatut('all')">Tous statuts</button>`;
+  STATS.forEach(s => {
+    const n = allItems.filter(i=>i.statut===s.id).length;
+    h2 += `<button class="tab" style="background:${filtreStatut===s.id?s.color:'#E0E4E8'};color:${filtreStatut===s.id?'#fff':'#2C3E50'}" onclick="setFiltreStatut('${s.id}')">${s.label.split(' ')[0]} (${n})</button>`;
+  });
+  document.getElementById('statTabs').innerHTML = h2;
+}
+
+function getFiltered() {
+  return allItems.filter(i =>
+    (filtreCat==='all'||i.categorie===filtreCat) &&
+    (filtreStatut==='all'||i.statut===filtreStatut)
+  );
+}
+
+function renderList() {
+  const items = getFiltered();
+  if (!items.length) { document.getElementById('list').innerHTML = '<div class="empty"><div style="font-size:40px;margin-bottom:8px">🎉</div><p>Aucun retour ici !</p></div>'; return; }
+  let h = '';
+  items.forEach(item => {
+    const cat  = getCat(item.categorie);
+    const stat = getStat(item.statut);
+    const d    = new Date(item.created_at).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'});
+    const clickable = isAdmin ? `style="cursor:pointer" onclick="openEdit('${item.id}')"` : '';
+    h += `<div class="card" style="border-left-color:${cat.color}" ${clickable}>
+      <div class="cbody">
+        <div class="ctitle">${item.titre}</div>
+        ${item.description?`<div class="cdesc">${item.description}</div>`:''}
+        <div class="cfooter">
+          <span class="badge" style="background:${cat.bg};color:${cat.color}">${cat.label}</span>
+          <span class="badge" style="background:${stat.bg};color:${stat.color}">${stat.label}</span>
+          <span class="date">${d} · ${item.auteur}</span>
+        </div>
+      </div>
+      ${item.note_axel?`<div class="note"><strong>Axel</strong>${item.note_axel}</div>`:''}
+    </div>`;
+  });
+  document.getElementById('list').innerHTML = h;
+}
+
+function setFiltreCat(v)    { filtreCat=v; renderAll(); }
+function setFiltreStatut(v) { filtreStatut=v; renderAll(); }
+
+// ── Ajout ────────────────────────────────────────────────────────────
+document.getElementById('fabBtn').addEventListener('click', openAdd);
+function openAdd() {
+  let h = '';
+  CATS.forEach(c => {
+    h += `<button class="cat" style="border-color:${c.color};background:${selectedCat===c.id?c.color:'transparent'};color:${selectedCat===c.id?'#fff':c.color}" onclick="selectCat('${c.id}')">${c.label}</button>`;
+  });
+  document.getElementById('catBtns').innerHTML = h;
+  document.getElementById('fTitre').value = '';
+  document.getElementById('fDesc').value = '';
+  document.getElementById('fAuteur').value = '';
+  document.getElementById('addSheet').style.display = 'flex';
+}
+function closeAdd() { document.getElementById('addSheet').style.display='none'; }
+function selectCat(id) {
+  selectedCat = id;
+  document.querySelectorAll('#catBtns .cat').forEach((b,i) => {
+    const c = CATS[i];
+    b.style.background = c.id===id?c.color:'transparent';
+    b.style.color = c.id===id?'#fff':c.color;
+  });
+}
+async function submitFeedback() {
+  const titre = document.getElementById('fTitre').value.trim();
+  if (!titre) return;
+  document.getElementById('submitBtn').disabled = true;
+  await sb.from('feedback').insert({
+    titre,
+    description: document.getElementById('fDesc').value.trim(),
+    categorie: selectedCat,
+    auteur: document.getElementById('fAuteur').value.trim() || 'Geoffrey',
+    statut: 'recu',
+    note_axel: ''
+  });
+  closeAdd();
+  await load();
+  document.getElementById('submitBtn').disabled = false;
+}
+
+// ── Admin PIN ─────────────────────────────────────────────────────────
+function openPin() {
+  pinVal = '';
+  renderPinDots();
+  document.getElementById('pinErr').style.display='none';
+  document.getElementById('pinSheet').style.display='flex';
+  // Keypad
+  const keys = ['1','2','3','4','5','6','7','8','9','','0','⌫'];
+  let h = '';
+  keys.forEach(k => {
+    if (!k) { h += '<div></div>'; return; }
+    const isDel = k==='⌫';
+    h += `<button onclick="pinKey('${k}')" style="padding:14px;background:${isDel?'#FFF0F0':'#F4F6F9'};border:none;border-radius:10px;font-size:20px;font-weight:700;cursor:pointer;color:${isDel?'#E94560':'#1A1A2E'}">${k}</button>`;
+  });
+  document.getElementById('pinPad').innerHTML = h;
+}
+function closePin() { document.getElementById('pinSheet').style.display='none'; pinVal=''; }
+function renderPinDots() {
+  const err = document.getElementById('pinErr').style.display==='block';
+  let h = '';
+  for(let i=0;i<4;i++) h+=`<div class="pd" style="background:${err?'#FFF0F0':pinVal.length>i?'#1A1A2E':'#F4F6F9'};color:${pinVal.length>i?'#fff':'transparent'};border-color:${err?'#E94560':'#E0E4E8'}">●</div>`;
+  document.getElementById('pinDots').innerHTML = h;
+}
+function pinKey(k) {
+  if (k==='⌫') { pinVal=pinVal.slice(0,-1); renderPinDots(); return; }
+  pinVal += k;
+  renderPinDots();
+  document.getElementById('pinErr').style.display='none';
+  if (pinVal.length===4) {
+    if (pinVal===ADMIN_PIN) { isAdmin=true; closePin(); renderAll(); }
+    else { document.getElementById('pinErr').style.display='block'; renderPinDots(); setTimeout(()=>{pinVal='';renderPinDots();},800); }
+  }
+}
+
+// ── Edit (admin) ──────────────────────────────────────────────────────
+function openEdit(id) {
+  editItem = allItems.find(i=>i.id===id);
+  if (!editItem) return;
+  const cat  = getCat(editItem.categorie);
+  const stat = getStat(editItem.statut);
+  document.getElementById('editCard').innerHTML = `
+    <div style="font-weight:700;font-size:14px;color:#1A1A2E;margin-bottom:4px">${editItem.titre}</div>
+    ${editItem.description?`<div style="font-size:12px;color:#7F8C8D">${editItem.description}</div>`:''}
+    <div style="margin-top:6px;display:flex;gap:6px">
+      <span class="badge" style="background:${cat.bg};color:${cat.color}">${cat.label}</span>
+      <span class="badge" style="background:${stat.bg};color:${stat.color}">${stat.label}</span>
+    </div>
+  `;
+  selectedStatut = editItem.statut;
+  let h = '';
+  STATS.forEach(s => {
+    h += `<div class="srow" style="background:${selectedStatut===s.id?s.bg:'#F9F9F9'};color:${selectedStatut===s.id?s.color:'#2C3E50'}" onclick="selectStatut('${s.id}')">
+      <span>${s.label}</span>
+      ${selectedStatut===s.id?`<span style="color:${s.color}">✓</span>`:''}
+    </div>`;
+  });
+  document.getElementById('statutBtns').innerHTML = h;
+  document.getElementById('noteAxel').value = editItem.note_axel||'';
+  document.getElementById('editSheet').style.display='flex';
+}
+function selectStatut(id) {
+  selectedStatut = id;
+  let h = '';
+  STATS.forEach(s => {
+    h += `<div class="srow" style="background:${selectedStatut===s.id?s.bg:'#F9F9F9'};color:${selectedStatut===s.id?s.color:'#2C3E50'}" onclick="selectStatut('${s.id}')">
+      <span>${s.label}</span>
+      ${selectedStatut===s.id?`<span style="color:${s.color}">✓</span>`:''}
+    </div>`;
+  });
+  document.getElementById('statutBtns').innerHTML = h;
+}
+function closeEdit() { document.getElementById('editSheet').style.display='none'; editItem=null; }
+async function saveEdit() {
+  if (!editItem) return;
+  await sb.from('feedback').update({
+    statut: selectedStatut||editItem.statut,
+    note_axel: document.getElementById('noteAxel').value.trim()
+  }).eq('id', editItem.id);
+  closeEdit();
+  await load();
+}
+
+load();
+</script>
+</body>
+</html>
