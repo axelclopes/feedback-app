@@ -42,6 +42,15 @@ body{background:#F4F6F9;min-height:100vh}
 .srow{display:flex;align-items:center;justify-content:space-between;padding:9px 12px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;margin-bottom:6px}
 .empty{text-align:center;padding:40px 20px;color:#B0B8C1}
 .spin{text-align:center;padding:40px;color:#7F8C8D;font-size:13px}
+.reply{background:#F0FFF4;border-top:1px solid #C3E6CB;padding:10px 14px}
+.reply strong{display:block;font-size:10px;text-transform:uppercase;margin-bottom:3px;color:#27AE60}
+.reply p{font-size:12px;color:#1A1A2E}
+.reply img{width:100%;border-radius:8px;margin-top:8px;max-height:200px;object-fit:contain;background:#fff;border:1px solid #E0E4E8}
+.reply-btn{background:#27AE60;color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer;margin-top:10px;width:100%}
+.upload-zone{border:2px dashed #E0E4E8;border-radius:10px;padding:20px;text-align:center;cursor:pointer;font-size:13px;color:#7F8C8D;position:relative;margin-top:6px}
+.upload-zone input{position:absolute;inset:0;opacity:0;cursor:pointer}
+.upload-zone.has-img{border-color:#27AE60;background:#F0FFF4;color:#27AE60}
+.upload-preview{width:100%;max-height:160px;object-fit:contain;border-radius:8px;margin-top:8px;display:none}
 </style>
 </head>
 <body>
@@ -90,8 +99,29 @@ body{background:#F4F6F9;min-height:100vh}
     <h2>Traiter ce retour</h2>
     <div id="editCard" style="background:#F4F6F9;border-radius:10px;padding:12px;margin-bottom:16px"></div>
     <div class="fg"><label>Statut</label><div id="statutBtns"></div></div>
-    <div class="fg"><label>Note / réponse</label><textarea id="noteAxel" rows="3" placeholder="Bien reçu · En cours pour semaine prochaine..."></textarea></div>
+    <div class="fg"><label>Note / message pour Geoffrey</label><textarea id="noteAxel" rows="3" placeholder="Bien reçu · Besoin de plus d'infos sur... · En cours..."></textarea></div>
     <button class="btn-s" onclick="saveEdit()">Enregistrer</button>
+  </div>
+</div>
+
+<!-- Sheet réponse Geoffrey -->
+<div class="ovl" id="replySheet" style="display:none" onclick="if(event.target===this)closeReply()">
+  <div class="sheet">
+    <h2>Répondre à Axel</h2>
+    <div id="replyCard" style="background:#FFF8E8;border-radius:10px;padding:12px;margin-bottom:16px;font-size:13px;color:#856404"></div>
+    <div class="fg">
+      <label>Votre réponse</label>
+      <textarea id="replyText" rows="3" placeholder="Voici ce que j'observe..."></textarea>
+    </div>
+    <div class="fg">
+      <label>Capture d'écran (optionnel)</label>
+      <div class="upload-zone" id="uploadZone">
+        <input type="file" accept="image/*" id="screenshotInput" onchange="previewImage(this)">
+        📸 Appuyer pour ajouter une photo
+      </div>
+      <img id="uploadPreview" class="upload-preview">
+    </div>
+    <button class="btn-s" id="replySubmitBtn" onclick="saveReply()">Envoyer la réponse</button>
   </div>
 </div>
 
@@ -185,6 +215,22 @@ function renderList() {
     const stat = getStat(item.statut);
     const d    = new Date(item.created_at).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'});
     const clickable = isAdmin ? `style="cursor:pointer" onclick="openEdit('${item.id}')"` : '';
+    // Bloc réponse de Geoffrey (visible par tous si elle existe)
+    const replyBlock = item.reponse_client
+      ? `<div class="reply">
+          <strong>Réponse de ${item.auteur}</strong>
+          <p>${item.reponse_client}</p>
+          ${item.screenshot_url?`<img src="${item.screenshot_url}" alt="capture" loading="lazy">`:''}
+        </div>`
+      : '';
+    // Bouton répondre (pour Geoffrey/équipe quand statut = demande d'info)
+    const replyBtn = !isAdmin && item.statut === 'info' && !item.reponse_client
+      ? `<div style="padding:10px 14px;border-top:1px solid #F0F0F0">
+           <button class="reply-btn" onclick="openReply('${item.id}')">
+             💬 Répondre à la demande d'Axel
+           </button>
+         </div>`
+      : '';
     h += `<div class="card" style="border-left-color:${cat.color}" ${clickable}>
       <div class="cbody">
         <div class="ctitle">${item.titre}</div>
@@ -196,6 +242,8 @@ function renderList() {
         </div>
       </div>
       ${item.note_axel?`<div class="note"><strong>Axel</strong>${item.note_axel}</div>`:''}
+      ${replyBlock}
+      ${replyBtn}
     </div>`;
   });
   document.getElementById('list').innerHTML = h;
@@ -322,6 +370,77 @@ async function saveEdit() {
     note_axel: document.getElementById('noteAxel').value.trim()
   }).eq('id', editItem.id);
   closeEdit();
+  await load();
+}
+
+// ── Réponse Geoffrey ───────────────────────────────────────────────────────
+let replyItemId = null;
+let replyFile = null;
+
+function openReply(id) {
+  replyItemId = id;
+  replyFile = null;
+  const item = allItems.find(i=>i.id===id);
+  document.getElementById('replyCard').textContent = item ? '❓ ' + item.note_axel : '';
+  document.getElementById('replyText').value = '';
+  document.getElementById('uploadZone').classList.remove('has-img');
+  document.getElementById('uploadZone').textContent = '📸 Appuyer pour ajouter une photo';
+  // Re-add file input
+  const input = document.createElement('input');
+  input.type = 'file'; input.accept = 'image/*'; input.id = 'screenshotInput';
+  input.style.cssText = 'position:absolute;inset:0;opacity:0;cursor:pointer';
+  input.onchange = () => previewImage(input);
+  document.getElementById('uploadZone').appendChild(input);
+  document.getElementById('uploadPreview').style.display = 'none';
+  document.getElementById('replySheet').style.display = 'flex';
+}
+
+function closeReply() {
+  document.getElementById('replySheet').style.display = 'none';
+  replyItemId = null; replyFile = null;
+}
+
+function previewImage(input) {
+  if (!input.files || !input.files[0]) return;
+  replyFile = input.files[0];
+  const reader = new FileReader();
+  reader.onload = e => {
+    const prev = document.getElementById('uploadPreview');
+    prev.src = e.target.result;
+    prev.style.display = 'block';
+    const zone = document.getElementById('uploadZone');
+    zone.classList.add('has-img');
+    // Keep only text node
+    zone.childNodes.forEach(n => { if (n.nodeType === 3) n.textContent = '✅ Photo ajoutée'; });
+  };
+  reader.readAsDataURL(replyFile);
+}
+
+async function saveReply() {
+  if (!replyItemId) return;
+  const replyText = document.getElementById('replyText').value.trim();
+  if (!replyText && !replyFile) return;
+  document.getElementById('replySubmitBtn').disabled = true;
+  document.getElementById('replySubmitBtn').textContent = 'Envoi...';
+
+  let screenshotUrl = '';
+  if (replyFile) {
+    const ext = replyFile.name.split('.').pop();
+    const path = replyItemId + '_' + Date.now() + '.' + ext;
+    const { data: up, error: upErr } = await sb.storage.from('screenshots').upload(path, replyFile);
+    if (!upErr && up) {
+      const { data: urlData } = sb.storage.from('screenshots').getPublicUrl(up.path);
+      screenshotUrl = urlData.publicUrl;
+    }
+  }
+
+  await sb.from('feedback').update({
+    reponse_client: replyText,
+    screenshot_url: screenshotUrl,
+    statut: 'verif'  // passe automatiquement en "À vérifier" pour Axel
+  }).eq('id', replyItemId);
+
+  closeReply();
   await load();
 }
 
