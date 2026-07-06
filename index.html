@@ -85,7 +85,7 @@ const CATS  = [{id:'bug',l:'🐛 Bug',c:'#E94560',b:'#FFF0F0'},{id:'idee',l:'�
 const STATS = [{id:'recu',l:'📥 Reçu',c:'#7F8C8D',b:'#F4F6F9'},{id:'info',l:'❓ Info requise',c:'#F39C12',b:'#FFF8F0'},{id:'cours',l:'⚙️ En cours',c:'#3498DB',b:'#EBF5FB'},{id:'verif',l:'🔍 À vérifier',c:'#8E44AD',b:'#F5EEF8'},{id:'done',l:'✅ Terminé',c:'#27AE60',b:'#F0FFF4'}];
 
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-let tickets=[], openTicket=null, messages=[], isAdmin=false, pinVal='', filtreCat='all', filtreStatut='all', recherche='', selectedCat='bug', currentUser='';
+let tickets=[], openTicket=null, messages=[], isAdmin=false, pinVal='', filtreCat='all', filtreStatut='all', recherche='', selectedCat='bug', currentUser='', showArchived=false;
 
 // ── Rendu racine ────────────────────────────────────────────────────────────
 function render() { document.getElementById('root').innerHTML = openTicket ? renderTicketView() : renderList(); bindEvents(); }
@@ -98,11 +98,14 @@ function timeAgo(d){const s=Math.floor((Date.now()-new Date(d))/1000);if(s<60)re
 // ── LISTE DES TICKETS ────────────────────────────────────────────────────────
 function renderList(){
   const q=recherche.trim().toLowerCase();
-  let filtered=tickets.filter(t=>(filtreCat==='all'||t.categorie===filtreCat)&&(filtreStatut==='all'||t.statut===filtreStatut));
+  // Filtre actifs vs archivés
+  const base=tickets.filter(t=>showArchived ? t.archived : !t.archived);
+  let filtered=base.filter(t=>(filtreCat==='all'||t.categorie===filtreCat)&&(filtreStatut==='all'||t.statut===filtreStatut));
   if(q) filtered=filtered.filter(t=>t.titre.toLowerCase().includes(q)||t.description?.toLowerCase().includes(q)||(t._lastMsg||'').toLowerCase().includes(q));
-  
-  const catBtns=[{id:'all',l:'Tous',n:tickets.length},...CATS.map(c=>({id:c.id,l:c.l,n:tickets.filter(t=>t.categorie===c.id).length}))];
-  const statBtns=[{id:'all',l:'Tous statuts',n:tickets.length},...STATS.map(s=>({id:s.id,l:s.l.split(' ')[0]+' '+s.l.split(' ').slice(1).join(' '),n:tickets.filter(t=>t.statut===s.id).length}))];
+
+  const catBtns=[{id:'all',l:'Tous',n:base.length},...CATS.map(c=>({id:c.id,l:c.l,n:base.filter(t=>t.categorie===c.id).length}))];
+  const statBtns=[{id:'all',l:'Tous statuts',n:base.length},...STATS.map(s=>({id:s.id,l:s.l.split(' ')[0]+' '+s.l.split(' ').slice(1).join(' '),n:base.filter(t=>t.statut===s.id).length}))];
+  const nbArchived=tickets.filter(t=>t.archived).length;
   
   return `
   <div class="wrap">
@@ -119,7 +122,13 @@ function renderList(){
     <div class="pad">
       <div class="tabs">${catBtns.map(b=>`<button class="tab" style="background:${filtreCat===b.id?'#1A1A2E':'#E0E4E8'};color:${filtreCat===b.id?'#fff':'#2C3E50'}" onclick="filtreCat='${b.id}';render()">${b.l} (${b.n})</button>`).join('')}</div>
       <div class="tabs">${statBtns.map(b=>`<button class="tab" style="background:${filtreStatut===b.id?(getStat(b.id)||{c:'#1A1A2E'}).c:'#E0E4E8'};color:${filtreStatut===b.id?'#fff':'#2C3E50'}" onclick="filtreStatut='${b.id}';render()">${b.l} (${b.n})</button>`).join('')}</div>
-      ${filtered.length===0?'<div class="empty"><div style="font-size:40px;margin-bottom:8px">🎉</div><p>Aucun ticket</p></div>':filtered.map(t=>{
+      <!-- Bouton archives -->
+      <div style="margin-bottom:10px">
+        <button onclick="showArchived=!showArchived;render()" style="background:${showArchived?'#7F8C8D':'#F4F6F9'};color:${showArchived?'#fff':'#7F8C8D'};border:1.5px solid #E0E4E8;border-radius:10px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;width:100%;text-align:left">
+          📦 ${showArchived?'← Retour aux tickets actifs':'Archives ('+nbArchived+' ticket'+(nbArchived>1?'s':'')+')'}
+        </button>
+      </div>
+      ${filtered.length===0?`<div class="empty"><div style="font-size:40px;margin-bottom:8px">${showArchived?'📦':'🎉'}</div><p>${showArchived?'Aucune archive':'Aucun ticket'}</p></div>`:filtered.map(t=>{
         const cat=getCat(t.categorie),stat=getStat(t.statut);
         const lastMsg=t._lastMsg?`<div class="ticket-preview">${esc(t._lastMsg)}</div>`:'';
         const msgCnt=t._msgCount>0?`<span class="msg-count">💬 ${t._msgCount}</span>`:'';
@@ -158,7 +167,10 @@ function renderTicketView(){
       <div class="msg-meta">${esc(m.auteur)} · ${timeAgo(m.created_at)}</div>
     </div>`;
   }).join('');
-  const statBtns=isAdmin?`<div class="status-bar">${STATS.map(s=>`<button class="s-btn" style="background:${t.statut===s.id?s.c:'#F4F6F9'};color:${t.statut===s.id?'#fff':'#7F8C8D'}" onclick="changeStatut('${s.id}')">${s.l}</button>`).join('')}</div>`:'';
+  const archiveBtn=isAdmin&&t.statut==='done'&&!t.archived?`<button onclick="archiveTicket('${t.id}')" style="margin-left:auto;background:#F4F6F9;color:#7F8C8D;border:none;padding:5px 12px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0">📦 Archiver</button>`:'';
+  const unarchiveBtn=isAdmin&&t.archived?`<button onclick="unarchiveTicket('${t.id}')" style="margin-left:auto;background:#EBF5FB;color:#3498DB;border:none;padding:5px 12px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;flex-shrink:0">↩ Désarchiver</button>`:'';
+  const archivedBanner=t.archived?`<div style="background:#F4F6F9;padding:8px 14px;text-align:center;font-size:12px;color:#7F8C8D;font-weight:600">📦 Ticket archivé</div>`:'';
+  const statBtns=isAdmin?`<div class="status-bar">${STATS.map(s=>`<button class="s-btn" style="background:${t.statut===s.id?s.c:'#F4F6F9'};color:${t.statut===s.id?'#fff':'#7F8C8D'}" onclick="changeStatut('${s.id}')">${s.l}</button>`).join('')}${archiveBtn}${unarchiveBtn}</div>`:'';
   return `
   <div class="wrap ticket-view">
     <div class="hdr">
@@ -169,6 +181,7 @@ function renderTicketView(){
       </div>
       ${isAdmin?`<button class="adm-btn" style="background:#27AE60;color:#fff">Axel ✓</button>`:''}
     </div>
+    ${archivedBanner}
     ${statBtns}
     <div class="ticket-info" style="border-left-color:${cat.c}">
       <h2>${esc(t.titre)}</h2>
@@ -290,6 +303,20 @@ async function handleFile(input){
   const auteur=isAdmin?'Axel':(currentUser||'Geoffrey');
   await sb.from('messages').insert({feedback_id:openTicket.id,contenu:isImg?'📸 Capture d\'écran':'📎 Document joint',auteur,type:isImg?'image':'file',url:urlD.publicUrl});
   await loadMessages(openTicket.id);
+  render();
+}
+
+async function archiveTicket(id){
+  await sb.from('feedback').update({archived:true}).eq('id',id);
+  openTicket=null;
+  await loadTickets();
+  render();
+}
+
+async function unarchiveTicket(id){
+  await sb.from('feedback').update({archived:false}).eq('id',id);
+  await loadTickets();
+  openTicket=tickets.find(t=>t.id===id)||null;
   render();
 }
 
